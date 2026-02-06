@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Tartan",
-  description: "Tartan App",
+  title: "Tartan - Back-Office AI",
+  description: "AI-powered back-office operations for financial services",
 };
 
 export default function RootLayout({ children }) {

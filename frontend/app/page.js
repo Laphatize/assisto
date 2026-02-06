@@ -1,68 +1,62 @@
 "use client";
 
 import { useAuth } from "@/lib/AuthContext";
-import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 import Link from "next/link";
 
 export default function Home() {
   const { user, loading } = useAuth();
+  const router = useRouter();
 
-  if (loading) {
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace("/dashboard");
+    }
+  }, [user, loading, router]);
+
+  if (loading || user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-        <p className="text-zinc-500 dark:text-zinc-400">Loading...</p>
+      <div className="flex min-h-screen items-center justify-center" style={{ background: "var(--background)" }}>
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--accent)]" />
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-      <main className="w-full max-w-md space-y-8 rounded-xl bg-white p-8 shadow-sm dark:bg-zinc-900">
-        {user ? (
-          <>
-            <div>
-              <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-                Welcome{user.displayName ? `, ${user.displayName}` : ""}
-              </h1>
-              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-                {user.email}
-              </p>
-            </div>
-            <button
-              onClick={() => signOut(auth)}
-              className="w-full rounded-lg border border-zinc-300 px-4 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              Sign out
-            </button>
-          </>
-        ) : (
-          <>
-            <div>
-              <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-                Tartan
-              </h1>
-              <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-                Sign in or create an account to get started.
-              </p>
-            </div>
-            <div className="flex flex-col gap-3">
-              <Link
-                href="/login"
-                className="flex w-full items-center justify-center rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-              >
-                Sign in
-              </Link>
-              <Link
-                href="/signup"
-                className="flex w-full items-center justify-center rounded-lg border border-zinc-300 px-4 py-2.5 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              >
-                Create account
-              </Link>
-            </div>
-          </>
-        )}
-      </main>
+    <div className="flex min-h-screen flex-col items-center justify-center px-4" style={{ background: "var(--background)" }}>
+      <div className="w-full max-w-sm space-y-8">
+        <div className="space-y-3 text-center">
+          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-sm" style={{ background: "var(--accent)" }}>
+            <span className="text-lg font-bold text-white">T</span>
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight" style={{ color: "var(--foreground)" }}>
+            Tartan
+          </h1>
+          <p className="text-sm leading-relaxed" style={{ color: "var(--muted)" }}>
+            AI-powered back-office operations for financial services
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <Link
+            href="/login"
+            className="flex w-full items-center justify-center rounded-sm px-4 py-2.5 text-sm font-medium text-white transition-colors"
+            style={{ background: "var(--accent)" }}
+            onMouseEnter={(e) => e.target.style.background = "var(--accent-hover)"}
+            onMouseLeave={(e) => e.target.style.background = "var(--accent)"}
+          >
+            Sign in
+          </Link>
+          <Link
+            href="/signup"
+            className="flex w-full items-center justify-center rounded-sm border px-4 py-2.5 text-sm font-medium transition-colors hover:opacity-80"
+            style={{ borderColor: "var(--border)", color: "var(--foreground)", background: "var(--card)" }}
+          >
+            Create account
+          </Link>
+        </div>
+      </div>
     </div>
   );
 }
