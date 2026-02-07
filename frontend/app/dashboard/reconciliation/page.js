@@ -8,6 +8,7 @@ const statusColors = {
   matched: { bg: "#e8f5e9", color: "#2e7d32", label: "Matched" },
   exception: { bg: "#fce4ec", color: "#b54a4a", label: "Exception" },
   pending: { bg: "#fff3e0", color: "#c4913b", label: "Pending" },
+  resolved: { bg: "#e0f2f1", color: "#00796b", label: "Resolved" },
 };
 
 export default function ReconciliationPage() {
@@ -19,10 +20,13 @@ export default function ReconciliationPage() {
   // JSON input hidden; data is sourced from documents/datasets
   const [runs, setRuns] = useState([]);
   const [dirty] = useState(false);
+  const [resolutions, setResolutions] = useState({});
+  const [resolveDraft, setResolveDraft] = useState(null);
 
   useEffect(() => {
     reloadDataset();
     reloadRuns();
+    reloadResolutions();
     const interval = setInterval(() => {
       if (!dirty) reloadDataset();
     }, 8000);
@@ -45,6 +49,7 @@ export default function ReconciliationPage() {
       setAiResults(data.results || []);
       setRecommendations(data.recommendations || []);
       reloadRuns();
+      reloadResolutions();
     } catch (err) {
       console.error("Reconciliation failed:", err);
     } finally {
@@ -62,8 +67,6 @@ export default function ReconciliationPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setTransactions(data.transactions || []);
-      setInput(JSON.stringify(data.transactions || [], null, 2));
-      setDirty(false);
     } catch (err) {}
   }
 
@@ -71,22 +74,68 @@ export default function ReconciliationPage() {
     try {
       const res = await fetch(`${API}/api/reconciliation/runs`);
       const data = await res.json();
-      if (res.ok) setRuns(data);
+      if (res.ok) {
+        setRuns(data);
+        if (data.length > 0) {
+          const latest = data[0];
+          setAiResults(latest.results || []);
+          setRecommendations(latest.recommendations || []);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function reloadResolutions() {
+    try {
+      const res = await fetch(`${API}/api/reconciliation/resolutions`);
+      const data = await res.json();
+      if (!res.ok) return;
+      const map = {};
+      data.forEach((r) => {
+        map[r.transactionId] = r;
+      });
+      setResolutions(map);
     } catch {
       // ignore
     }
   }
 
   function getStatus(txnId) {
+    const resolution = resolutions[txnId];
+    if (resolution?.status) return resolution.status;
     if (!aiResults) return "pending";
     const r = aiResults.find((r) => r.id === txnId);
     return r?.status || "pending";
   }
 
   function getNotes(txnId) {
+    const resolution = resolutions[txnId];
+    if (resolution) {
+      const extra = [
+        resolution.matched_with ? `Matched with ${resolution.matched_with}` : null,
+        resolution.notes ? resolution.notes : null,
+      ].filter(Boolean);
+      return extra.join(" — ");
+    }
     if (!aiResults) return null;
     const r = aiResults.find((r) => r.id === txnId);
     return r?.notes || null;
+  }
+
+  async function saveResolution() {
+    if (!resolveDraft?.transactionId) return;
+    const res = await fetch(`${API}/api/reconciliation/resolutions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(resolveDraft),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setResolutions((prev) => ({ ...prev, [data.transactionId]: data }));
+      setResolveDraft(null);
+    }
   }
 
   const rows = transactions.map((t) => ({ ...t, status: getStatus(t.id) }));
@@ -94,6 +143,7 @@ export default function ReconciliationPage() {
   const matchedCount = rows.filter((t) => t.status === "matched").length;
   const exceptionCount = rows.filter((t) => t.status === "exception").length;
   const pendingCount = rows.filter((t) => t.status === "pending").length;
+  const resolvedCount = rows.filter((t) => t.status === "resolved").length;
 
   return (
     <div className="space-y-6">
@@ -125,7 +175,7 @@ export default function ReconciliationPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-4 gap-4">
         <div className="rounded border p-5" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
           <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>Matched</p>
           <p className="mt-2 text-2xl font-semibold" style={{ color: "#2e7d32" }}>{matchedCount}</p>
@@ -137,6 +187,10 @@ export default function ReconciliationPage() {
         <div className="rounded border p-5" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
           <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>Pending</p>
           <p className="mt-2 text-2xl font-semibold" style={{ color: "#c4913b" }}>{pendingCount}</p>
+        </div>
+        <div className="rounded border p-5" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+          <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>Resolved</p>
+          <p className="mt-2 text-2xl font-semibold" style={{ color: "#00796b" }}>{resolvedCount}</p>
         </div>
       </div>
 
@@ -182,7 +236,7 @@ export default function ReconciliationPage() {
 
       <div className="rounded border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
         <div className="flex items-center gap-1 border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
-          {["all", "matched", "exception", "pending"].map((tab) => (
+          {["all", "matched", "exception", "pending", "resolved"].map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className="rounded-sm px-3 py-1.5 text-xs font-medium capitalize transition-colors"
               style={{ background: activeTab === tab ? "var(--background)" : "transparent", color: activeTab === tab ? "var(--accent)" : "var(--muted)" }}>
@@ -217,13 +271,97 @@ export default function ReconciliationPage() {
                       {statusColors[txn.status].label}
                     </span>
                   </td>
-                  <td className="px-5 py-3 text-[11px] max-w-[200px]" style={{ color: "var(--muted)" }}>{getNotes(txn.id) || "—"}</td>
+                  <td className="px-5 py-3 text-[11px] max-w-[260px]" style={{ color: "var(--muted)" }}>
+                    {getNotes(txn.id) || "—"}
+                    {txn.id && ["exception", "pending"].includes(txn.status) && (
+                      <button
+                        onClick={() => {
+                          const ai = aiResults?.find((r) => r.id === txn.id);
+                          setResolveDraft({
+                            transactionId: txn.id,
+                            status: "resolved",
+                            matched_with: ai?.matched_with || "",
+                            notes: "",
+                          });
+                          setTimeout(() => {
+                            const panel = document.getElementById("resolve-panel");
+                            panel?.scrollIntoView({ behavior: "smooth", block: "center" });
+                          }, 0);
+                        }}
+                        className="mt-2 block rounded-sm px-2 py-1 text-[10px] font-medium"
+                        style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
+                      >
+                        Resolve
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {resolveDraft && (
+        <div
+          id="resolve-panel"
+          className="fixed bottom-6 right-6 z-50 w-[420px] rounded border p-4 shadow-lg"
+          style={{ background: "var(--card)", borderColor: "var(--border)" }}
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Resolve {resolveDraft.transactionId}</p>
+            <button
+              onClick={() => setResolveDraft(null)}
+              className="rounded-sm px-2 py-1 text-xs"
+              style={{ background: "var(--background)", color: "var(--muted)", border: "1px solid var(--border)" }}
+            >
+              Close
+            </button>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-[11px]" style={{ color: "var(--muted)" }}>Status</label>
+              <select
+                className="mt-1 w-full rounded border px-2 py-1 text-xs"
+                style={{ background: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
+                value={resolveDraft.status}
+                onChange={(e) => setResolveDraft({ ...resolveDraft, status: e.target.value })}
+              >
+                <option value="resolved">Resolved</option>
+                <option value="matched">Matched</option>
+                <option value="pending">Pending</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px]" style={{ color: "var(--muted)" }}>Matched With</label>
+              <input
+                className="mt-1 w-full rounded border px-2 py-1 text-xs"
+                style={{ background: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
+                value={resolveDraft.matched_with}
+                onChange={(e) => setResolveDraft({ ...resolveDraft, matched_with: e.target.value })}
+                placeholder="TXN-1234"
+              />
+            </div>
+            <div>
+              <label className="text-[11px]" style={{ color: "var(--muted)" }}>Notes</label>
+              <input
+                className="mt-1 w-full rounded border px-2 py-1 text-xs"
+                style={{ background: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
+                value={resolveDraft.notes}
+                onChange={(e) => setResolveDraft({ ...resolveDraft, notes: e.target.value })}
+                placeholder="Reason / action"
+              />
+            </div>
+          </div>
+          <button
+            onClick={saveResolution}
+            className="mt-3 rounded-sm px-3 py-1.5 text-xs font-medium"
+            style={{ background: "var(--accent)", color: "white" }}
+          >
+            Save Resolution
+          </button>
+        </div>
+      )}
     </div>
   );
 }

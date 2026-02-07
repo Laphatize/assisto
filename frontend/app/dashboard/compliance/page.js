@@ -66,7 +66,6 @@ export default function CompliancePage() {
       if (!res.ok) throw new Error(data.error);
       setEntities(data.entities || []);
       setTransactions(data.transactions || []);
-      setDirty(false);
     } catch (err) {}
   }
 

@@ -4,6 +4,7 @@ const { dedalus, openai, hasDedalus, hasOpenAI } = require("../lib/openai");
 const ReconciliationDataset = require("../models/ReconciliationDataset");
 const ReconciliationRun = require("../models/ReconciliationRun");
 const Report = require("../models/Report");
+const ReconciliationResolution = require("../models/ReconciliationResolution");
 
 async function getOrCreateDataset() {
   let dataset = await ReconciliationDataset.findOne();
@@ -33,6 +34,35 @@ router.put("/dataset", async (req, res) => {
 router.get("/runs", async (_req, res) => {
   const runs = await ReconciliationRun.find().sort({ createdAt: -1 }).lean();
   res.json(runs);
+});
+
+// GET /api/reconciliation/resolutions
+router.get("/resolutions", async (_req, res) => {
+  const resolutions = await ReconciliationResolution.find().sort({ updatedAt: -1 }).lean();
+  res.json(resolutions);
+});
+
+// POST /api/reconciliation/resolutions
+router.post("/resolutions", async (req, res) => {
+  const { transactionId, status, matched_with, notes } = req.body || {};
+  if (!transactionId || !status) {
+    return res.status(400).json({ error: "transactionId and status required" });
+  }
+  const update = {
+    $set: {
+      transactionId,
+      status,
+      matched_with: matched_with || null,
+      notes: notes || "",
+    },
+    $push: { history: { status, matched_with: matched_with || null, notes: notes || "" } },
+  };
+  const resolution = await ReconciliationResolution.findOneAndUpdate(
+    { transactionId },
+    update,
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+  res.json(resolution);
 });
 
 // POST /api/reconciliation/analyze
