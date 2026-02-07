@@ -7,7 +7,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 const riskColor = { Low: "#16a34a", Medium: "#2563eb", High: "#dc2626" };
 const sevColor = { high: "#dc2626", medium: "#2563eb", low: "#16a34a" };
 
-export default function RiskPage() {
+export default function DataSources() {
   const [running, setRunning] = useState(false);
   const [metrics, setMetrics] = useState(null);
   const [exposures, setExposures] = useState([]);
