@@ -3,7 +3,7 @@ const router = express.Router();
 const multer = require("multer");
 const openai = require("../lib/openai");
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
 // POST /api/documents/process
 router.post("/process", upload.single("file"), async (req, res) => {

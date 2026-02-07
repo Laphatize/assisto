@@ -11,6 +11,10 @@ router.post("/analyze", async (req, res) => {
       return res.status(400).json({ error: "transactions array required" });
     }
 
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({ error: "OPENAI_API_KEY not set" });
+    }
+
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -33,10 +37,19 @@ Return ONLY valid JSON, no markdown.`,
           content: `Reconcile these transactions:\n${JSON.stringify(transactions, null, 2)}`,
         },
       ],
+      response_format: { type: "json_object" },
       temperature: 0.1,
     });
 
-    const parsed = JSON.parse(response.choices[0].message.content);
+    const content = response.choices?.[0]?.message?.content ?? "";
+    let parsed;
+    try {
+      parsed = JSON.parse(content);
+    } catch (parseError) {
+      const match = content.match(/\{[\s\S]*\}/);
+      if (!match) throw parseError;
+      parsed = JSON.parse(match[0]);
+    }
     res.json(parsed);
   } catch (error) {
     console.error("Reconciliation error:", error);

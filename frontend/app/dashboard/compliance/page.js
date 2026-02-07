@@ -1,110 +1,198 @@
 "use client";
 
-const alerts = [
-  { id: "CMP-101", rule: "KYC Expiry", entity: "Citadel Securities", severity: "high", detail: "KYC documentation expires in 5 days. Renewal required to continue trading.", date: "2025-02-06" },
-  { id: "CMP-102", rule: "AML Screening", entity: "Offshore Fund VII", severity: "high", detail: "Transaction pattern flagged by AI — unusual volume spike detected.", date: "2025-02-06" },
-  { id: "CMP-103", rule: "Reg W Limit", entity: "Internal Transfer", severity: "medium", detail: "Affiliate transaction approaching Section 23A limit (87% utilized).", date: "2025-02-05" },
-  { id: "CMP-104", rule: "OFAC Match", entity: "Meridian Trading Co.", severity: "low", detail: "Fuzzy name match detected — AI confidence: 12%. Likely false positive.", date: "2025-02-05" },
-  { id: "CMP-105", rule: "SOX Control", entity: "GL Reconciliation", severity: "medium", detail: "Segregation of duties violation — same user initiated and approved transfer.", date: "2025-02-04" },
-];
+import { useState } from "react";
+
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 
 const severityStyles = {
-  high: { bg: "#fce4ec", color: "#b54a4a", dot: "#b54a4a" },
-  medium: { bg: "#fff3e0", color: "#c4913b", dot: "#c4913b" },
-  low: { bg: "#e8f5e9", color: "#2e7d32", dot: "#2e7d32" },
+  high: { bg: "#fce4ec", color: "#b54a4a" },
+  medium: { bg: "#fff3e0", color: "#c4913b" },
+  low: { bg: "#e8f5e9", color: "#2e7d32" },
 };
 
-const regulations = [
-  { name: "Anti-Money Laundering (AML)", status: "Compliant", score: 97 },
-  { name: "Know Your Customer (KYC)", status: "Action Required", score: 84 },
-  { name: "Sarbanes-Oxley (SOX)", status: "Compliant", score: 95 },
-  { name: "OFAC Sanctions", status: "Compliant", score: 99 },
-  { name: "Regulation W", status: "Monitoring", score: 88 },
-  { name: "Basel III Capital", status: "Compliant", score: 96 },
-];
-
 export default function CompliancePage() {
+  const [scanning, setScanning] = useState(false);
+  const [alerts, setAlerts] = useState([]);
+  const [scores, setScores] = useState([]);
+  const [summary, setSummary] = useState("");
+  const [entities, setEntities] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [entitiesInput, setEntitiesInput] = useState("[]");
+  const [transactionsInput, setTransactionsInput] = useState("[]");
+  const [inputError, setInputError] = useState("");
+
+  async function runScan() {
+    setScanning(true);
+    try {
+      if (!entities.length && !transactions.length) {
+        throw new Error("Load entities or transactions to run a scan.");
+      }
+      const res = await fetch(`${API}/api/compliance/scan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entities, transactions }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setAlerts(data.alerts || []);
+      setScores(data.regulatory_scores || []);
+      setSummary(data.summary || "");
+      setInputError("");
+    } catch (err) {
+      console.error("Compliance scan failed:", err);
+      setInputError(err.message);
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  function loadInputs() {
+    try {
+      const parsedEntities = JSON.parse(entitiesInput);
+      const parsedTransactions = JSON.parse(transactionsInput);
+      if (!Array.isArray(parsedEntities) || !Array.isArray(parsedTransactions)) {
+        throw new Error("Inputs must be JSON arrays.");
+      }
+      setEntities(parsedEntities);
+      setTransactions(parsedTransactions);
+      setAlerts([]);
+      setScores([]);
+      setSummary("");
+      setInputError("");
+    } catch (err) {
+      setInputError(err.message);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold" style={{ color: "var(--foreground)" }}>Compliance</h1>
-          <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
-            Regulatory monitoring, AI-driven alerts, and audit readiness
-          </p>
+          <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>Regulatory monitoring, AI-driven alerts, and audit readiness</p>
         </div>
-        <button
-          className="rounded-sm px-4 py-2 text-sm font-medium text-white transition-colors"
-          style={{ background: "var(--accent)" }}
-          onMouseEnter={(e) => e.target.style.background = "var(--accent-hover)"}
-          onMouseLeave={(e) => e.target.style.background = "var(--accent)"}
-        >
-          Run Compliance Scan
+        <button onClick={runScan} disabled={scanning || (entities.length === 0 && transactions.length === 0)}
+          className="flex items-center gap-2 rounded-sm px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
+          style={{ background: "var(--accent)" }}>
+          {scanning && <div className="h-3 w-3 animate-spin rounded-full border border-white/30 border-t-white" />}
+          {scanning ? "Scanning..." : "Run Compliance Scan"}
         </button>
       </div>
 
+      <div className="rounded border p-5 space-y-3" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>Input Data</p>
+            <p className="text-xs" style={{ color: "var(--muted)" }}>Paste JSON arrays for entities and transactions.</p>
+          </div>
+          <button
+            onClick={loadInputs}
+            className="rounded-sm px-3 py-1.5 text-xs font-medium"
+            style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
+          >
+            Load Data
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <textarea
+            value={entitiesInput}
+            onChange={(e) => setEntitiesInput(e.target.value)}
+            rows={6}
+            className="w-full rounded border p-3 text-xs font-mono"
+            style={{ background: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
+            placeholder='[{"name":"Counterparty A","type":"Counterparty","kyc_expiry":"2026-03-01","jurisdiction":"US"}]'
+          />
+          <textarea
+            value={transactionsInput}
+            onChange={(e) => setTransactionsInput(e.target.value)}
+            rows={6}
+            className="w-full rounded border p-3 text-xs font-mono"
+            style={{ background: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
+            placeholder='[{"id":"TXN-001","entity":"Counterparty A","amount":"1000","type":"Wire","date":"2026-02-07"}]'
+          />
+        </div>
+        {inputError && <p className="text-xs" style={{ color: "#b54a4a" }}>{inputError}</p>}
+        <p className="text-xs" style={{ color: "var(--muted)" }}>
+          {entities.length} entity(ies), {transactions.length} transaction(s) loaded.
+        </p>
+      </div>
+
+      {summary && (
+        <div className="rounded border p-5" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+          <p className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--accent)" }}>AI Assessment</p>
+          <p className="text-[13px]" style={{ color: "var(--foreground)" }}>{summary}</p>
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-6">
-        {/* Alerts */}
-        <div className="col-span-2 space-y-4">
+        <div className="col-span-2">
           <div className="rounded border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
             <div className="border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
-              <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Active Alerts</h2>
+              <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
+                {alerts.length > 0 ? `Active Alerts (${alerts.length})` : "Active Alerts"}
+              </h2>
             </div>
-            <div className="divide-y" style={{ borderColor: "var(--border)" }}>
-              {alerts.map((alert) => (
-                <div key={alert.id} className="px-5 py-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <div className="h-2 w-2 rounded-sm" style={{ background: severityStyles[alert.severity].dot }} />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[13px] font-medium" style={{ color: "var(--foreground)" }}>{alert.rule}</span>
-                          <span
-                            className="rounded-sm px-2 py-0.5 text-[10px] font-medium capitalize"
-                            style={{ background: severityStyles[alert.severity].bg, color: severityStyles[alert.severity].color }}
-                          >
-                            {alert.severity}
-                          </span>
+            {alerts.length === 0 ? (
+              <div className="px-5 py-8 text-center">
+                <p className="text-sm" style={{ color: "var(--muted)" }}>{scanning ? "Scanning..." : "Run a compliance scan to detect issues."}</p>
+              </div>
+            ) : (
+              <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+                {alerts.map((alert, i) => (
+                  <div key={alert.id || i} className="px-5 py-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-2 w-2 rounded-sm" style={{ background: severityStyles[alert.severity]?.color || "var(--muted)" }} />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13px] font-medium" style={{ color: "var(--foreground)" }}>{alert.rule}</span>
+                            <span className="rounded-sm px-2 py-0.5 text-[10px] font-medium capitalize"
+                              style={{ background: severityStyles[alert.severity]?.bg, color: severityStyles[alert.severity]?.color }}>
+                              {alert.severity}
+                            </span>
+                          </div>
+                          <p className="text-xs" style={{ color: "var(--muted)" }}>{alert.entity}</p>
                         </div>
-                        <p className="text-xs" style={{ color: "var(--muted)" }}>{alert.entity}</p>
                       </div>
                     </div>
-                    <span className="text-[11px]" style={{ color: "var(--muted)" }}>{alert.date}</span>
+                    <p className="mt-2 pl-[18px] text-xs leading-relaxed" style={{ color: "var(--muted)" }}>{alert.detail}</p>
+                    {alert.recommended_action && (
+                      <p className="mt-1 pl-[18px] text-xs" style={{ color: "var(--accent)" }}>Action: {alert.recommended_action}</p>
+                    )}
                   </div>
-                  <p className="mt-2 pl-[18px] text-xs leading-relaxed" style={{ color: "var(--muted)" }}>
-                    {alert.detail}
-                  </p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Regulatory Status */}
         <div className="rounded border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
           <div className="border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
             <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Regulatory Status</h2>
           </div>
-          <div className="space-y-1 p-3">
-            {regulations.map((reg) => (
-              <div key={reg.name} className="rounded-sm px-3 py-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-[13px] font-medium" style={{ color: "var(--foreground)" }}>{reg.name}</p>
-                  <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--accent)" }}>{reg.score}%</span>
-                </div>
-                <div className="mt-2 h-1 w-full overflow-hidden rounded-sm" style={{ background: "var(--border)" }}>
-                  <div
-                    className="h-full rounded-sm transition-all"
-                    style={{
+          {scores.length === 0 ? (
+            <div className="px-5 py-8 text-center">
+              <p className="text-sm" style={{ color: "var(--muted)" }}>{scanning ? "Scoring..." : "Run scan to get scores."}</p>
+            </div>
+          ) : (
+            <div className="space-y-1 p-3">
+              {scores.map((reg, i) => (
+                <div key={i} className="rounded-sm px-3 py-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[13px] font-medium" style={{ color: "var(--foreground)" }}>{reg.regulation}</p>
+                    <span className="text-xs font-semibold tabular-nums" style={{ color: "var(--accent)" }}>{reg.score}%</span>
+                  </div>
+                  <div className="mt-2 h-1 w-full overflow-hidden rounded-sm" style={{ background: "var(--border)" }}>
+                    <div className="h-full rounded-sm transition-all" style={{
                       width: `${reg.score}%`,
                       background: reg.score >= 95 ? "#3d8c5c" : reg.score >= 85 ? "#c4913b" : "#b54a4a",
-                    }}
-                  />
+                    }} />
+                  </div>
+                  <p className="mt-1 text-[11px]" style={{ color: "var(--muted)" }}>{reg.status}</p>
                 </div>
-                <p className="mt-1 text-[11px]" style={{ color: "var(--muted)" }}>{reg.status}</p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

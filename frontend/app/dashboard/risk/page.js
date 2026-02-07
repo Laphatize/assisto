@@ -1,104 +1,212 @@
 "use client";
 
-const riskMetrics = [
-  { label: "Value at Risk (95%)", value: "$4.2M", trend: "Stable", color: "#3d8c5c" },
-  { label: "Expected Shortfall", value: "$6.8M", trend: "Elevated", color: "#c4913b" },
-  { label: "Sharpe Ratio", value: "1.42", trend: "Improving", color: "#3d8c5c" },
-  { label: "Max Drawdown", value: "-3.2%", trend: "Within Limit", color: "#3d8c5c" },
-];
+import { useState } from "react";
 
-const exposures = [
-  { asset: "US Equities", exposure: "$124.5M", pct: 35, risk: "Low" },
-  { asset: "Fixed Income", exposure: "$98.2M", pct: 28, risk: "Low" },
-  { asset: "FX Forwards", exposure: "$52.1M", pct: 15, risk: "Medium" },
-  { asset: "Commodities", exposure: "$35.7M", pct: 10, risk: "Medium" },
-  { asset: "Credit Derivatives", exposure: "$28.4M", pct: 8, risk: "High" },
-  { asset: "Emerging Markets", exposure: "$14.1M", pct: 4, risk: "High" },
-];
-
-const stressTests = [
-  { scenario: "Interest Rate +200bps", impact: "-$8.4M", severity: "high" },
-  { scenario: "Equity Market -20%", impact: "-$24.9M", severity: "high" },
-  { scenario: "Credit Spread Widening", impact: "-$5.2M", severity: "medium" },
-  { scenario: "FX USD Strengthening 10%", impact: "-$3.1M", severity: "medium" },
-  { scenario: "Commodity Shock", impact: "-$2.8M", severity: "low" },
-  { scenario: "Liquidity Crisis", impact: "-$12.3M", severity: "high" },
-];
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 
 const riskColor = { Low: "#3d8c5c", Medium: "#c4913b", High: "#b54a4a" };
 const sevColor = { high: "#b54a4a", medium: "#c4913b", low: "#3d8c5c" };
 
 export default function RiskPage() {
+  const [running, setRunning] = useState(false);
+  const [metrics, setMetrics] = useState(null);
+  const [exposures, setExposures] = useState([]);
+  const [stressTests, setStressTests] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
+  const [portfolio, setPortfolio] = useState([]);
+  const [scenarios, setScenarios] = useState([]);
+  const [portfolioInput, setPortfolioInput] = useState("[]");
+  const [scenariosInput, setScenariosInput] = useState("[]");
+  const [inputError, setInputError] = useState("");
+
+  async function runAnalysis() {
+    setRunning(true);
+    try {
+      if (!portfolio.length && !scenarios.length) {
+        throw new Error("Load a portfolio or scenarios to run analysis.");
+      }
+      const res = await fetch(`${API}/api/risk/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portfolio, scenarios }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setMetrics(data.metrics || null);
+      setExposures(data.exposures || []);
+      setStressTests(data.stress_tests || []);
+      setRecommendations(data.recommendations || []);
+      setInputError("");
+    } catch (err) {
+      console.error("Risk analysis failed:", err);
+      setInputError(err.message);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  function loadInputs() {
+    try {
+      const parsedPortfolio = JSON.parse(portfolioInput);
+      const parsedScenarios = JSON.parse(scenariosInput);
+      if (!Array.isArray(parsedPortfolio) || !Array.isArray(parsedScenarios)) {
+        throw new Error("Inputs must be JSON arrays.");
+      }
+      setPortfolio(parsedPortfolio);
+      setScenarios(parsedScenarios);
+      setMetrics(null);
+      setExposures([]);
+      setStressTests([]);
+      setRecommendations([]);
+      setInputError("");
+    } catch (err) {
+      setInputError(err.message);
+    }
+  }
+
+  const displayMetrics = metrics
+    ? [
+        { label: "Value at Risk (95%)", value: metrics.var_95 },
+        { label: "Expected Shortfall", value: metrics.expected_shortfall },
+        { label: "Sharpe Ratio", value: metrics.sharpe_ratio },
+        { label: "Max Drawdown", value: metrics.max_drawdown },
+      ]
+    : [
+        { label: "Value at Risk (95%)", value: "—" },
+        { label: "Expected Shortfall", value: "—" },
+        { label: "Sharpe Ratio", value: "—" },
+        { label: "Max Drawdown", value: "—" },
+      ];
+
+  const displayExposures = exposures.length > 0 ? exposures : portfolio.map((p) => ({ ...p, risk_level: "—" }));
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold" style={{ color: "var(--foreground)" }}>Risk Assessment</h1>
-        <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
-          AI-driven portfolio risk analysis, stress testing, and exposure monitoring
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold" style={{ color: "var(--foreground)" }}>Risk Assessment</h1>
+          <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>AI-driven portfolio risk analysis, stress testing, and exposure monitoring</p>
+        </div>
+        <button onClick={runAnalysis} disabled={running || (portfolio.length === 0 && scenarios.length === 0)}
+          className="flex items-center gap-2 rounded-sm px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
+          style={{ background: "var(--accent)" }}>
+          {running && <div className="h-3 w-3 animate-spin rounded-full border border-white/30 border-t-white" />}
+          {running ? "Analyzing..." : "Run Risk Analysis"}
+        </button>
+      </div>
+
+      <div className="rounded border p-5 space-y-3" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>Input Data</p>
+            <p className="text-xs" style={{ color: "var(--muted)" }}>Paste JSON arrays for portfolio and scenarios.</p>
+          </div>
+          <button
+            onClick={loadInputs}
+            className="rounded-sm px-3 py-1.5 text-xs font-medium"
+            style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
+          >
+            Load Data
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <textarea
+            value={portfolioInput}
+            onChange={(e) => setPortfolioInput(e.target.value)}
+            rows={6}
+            className="w-full rounded border p-3 text-xs font-mono"
+            style={{ background: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
+            placeholder='[{"asset":"US Equities","exposure":"1000000","percentage":40}]'
+          />
+          <textarea
+            value={scenariosInput}
+            onChange={(e) => setScenariosInput(e.target.value)}
+            rows={6}
+            className="w-full rounded border p-3 text-xs font-mono"
+            style={{ background: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
+            placeholder='["Equity Market -10%","Rates +100bps"]'
+          />
+        </div>
+        {inputError && <p className="text-xs" style={{ color: "#b54a4a" }}>{inputError}</p>}
+        <p className="text-xs" style={{ color: "var(--muted)" }}>
+          {portfolio.length} portfolio item(s), {scenarios.length} scenario(s) loaded.
         </p>
       </div>
 
-      {/* Risk Metrics */}
+      {recommendations.length > 0 && (
+        <div className="rounded border p-5 space-y-2" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+          <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>AI Recommendations</p>
+          {recommendations.map((rec, i) => (
+            <p key={i} className="text-[13px]" style={{ color: "var(--foreground)" }}>{rec}</p>
+          ))}
+        </div>
+      )}
+
       <div className="grid grid-cols-4 gap-4">
-        {riskMetrics.map((m) => (
+        {displayMetrics.map((m) => (
           <div key={m.label} className="rounded border p-5" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
             <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>{m.label}</p>
             <p className="mt-2 text-2xl font-semibold tabular-nums" style={{ color: "var(--foreground)" }}>{m.value}</p>
-            <p className="mt-1 text-xs font-medium" style={{ color: m.color }}>{m.trend}</p>
+            <p className="mt-1 text-xs" style={{ color: metrics ? "#3d8c5c" : "var(--muted)" }}>{metrics ? "Calculated" : "Run analysis"}</p>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-2 gap-6">
-        {/* Exposure Breakdown */}
         <div className="rounded border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
           <div className="border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
             <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Exposure Breakdown</h2>
           </div>
-          <div className="divide-y" style={{ borderColor: "var(--border)" }}>
-            {exposures.map((e) => (
-              <div key={e.asset} className="flex items-center gap-4 px-5 py-3.5">
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[13px] font-medium" style={{ color: "var(--foreground)" }}>{e.asset}</span>
-                    <span className="text-[13px] font-medium tabular-nums" style={{ color: "var(--foreground)" }}>{e.exposure}</span>
-                  </div>
-                  <div className="mt-2 flex items-center gap-3">
-                    <div className="h-1 flex-1 overflow-hidden rounded-sm" style={{ background: "var(--border)" }}>
-                      <div className="h-full rounded-sm" style={{ width: `${e.pct}%`, background: riskColor[e.risk] }} />
+          {displayExposures.length === 0 ? (
+            <div className="px-5 py-8 text-center">
+              <p className="text-sm" style={{ color: "var(--muted)" }}>No portfolio loaded.</p>
+            </div>
+          ) : (
+            <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+              {displayExposures.map((e, i) => (
+                <div key={i} className="flex items-center gap-4 px-5 py-3.5">
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[13px] font-medium" style={{ color: "var(--foreground)" }}>{e.asset}</span>
+                      <span className="text-[13px] font-medium tabular-nums" style={{ color: "var(--foreground)" }}>{e.exposure}</span>
                     </div>
-                    <span className="text-[11px] font-medium" style={{ color: riskColor[e.risk] }}>{e.risk}</span>
+                    <div className="mt-2 flex items-center gap-3">
+                      <div className="h-1 flex-1 overflow-hidden rounded-sm" style={{ background: "var(--border)" }}>
+                        <div className="h-full rounded-sm" style={{ width: `${e.percentage}%`, background: riskColor[e.risk_level] || "var(--muted)" }} />
+                      </div>
+                      <span className="text-[11px] font-medium" style={{ color: riskColor[e.risk_level] || "var(--muted)" }}>{e.risk_level}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Stress Tests */}
         <div className="rounded border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
-          <div className="flex items-center justify-between border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
+          <div className="border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
             <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Stress Test Results</h2>
-            <button
-              className="rounded-sm px-3 py-1 text-xs font-medium text-white"
-              style={{ background: "var(--accent)" }}
-            >
-              Run Tests
-            </button>
           </div>
-          <div className="divide-y" style={{ borderColor: "var(--border)" }}>
-            {stressTests.map((t) => (
-              <div key={t.scenario} className="flex items-center justify-between px-5 py-3.5">
-                <div className="flex items-center gap-2.5">
-                  <div className="h-1.5 w-1.5 rounded-sm" style={{ background: sevColor[t.severity] }} />
-                  <span className="text-[13px]" style={{ color: "var(--foreground)" }}>{t.scenario}</span>
+          {stressTests.length === 0 ? (
+            <div className="px-5 py-8 text-center">
+              <p className="text-sm" style={{ color: "var(--muted)" }}>{running ? "Running stress tests..." : "No stress test results yet."}</p>
+            </div>
+          ) : (
+            <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+              {stressTests.map((t, i) => (
+                <div key={i} className="px-5 py-3.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-1.5 w-1.5 rounded-sm" style={{ background: sevColor[t.severity] || "var(--muted)" }} />
+                      <span className="text-[13px]" style={{ color: "var(--foreground)" }}>{t.scenario}</span>
+                    </div>
+                    <span className="text-[13px] font-semibold tabular-nums" style={{ color: sevColor[t.severity] || "var(--muted)" }}>{t.impact}</span>
+                  </div>
+                  {t.detail && <p className="mt-1 pl-4 text-[11px]" style={{ color: "var(--muted)" }}>{t.detail}</p>}
                 </div>
-                <span className="text-[13px] font-semibold tabular-nums" style={{ color: sevColor[t.severity] }}>
-                  {t.impact}
-                </span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -33,7 +33,9 @@ export const useAuth = () => useContext(AuthContext);
 
 async function syncUserToBackend(firebaseUser) {
   try {
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/sync`, {
+    const baseUrl =
+      process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
+    await fetch(`${baseUrl}/api/users/sync`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

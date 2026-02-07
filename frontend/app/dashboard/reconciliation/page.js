@@ -2,16 +2,7 @@
 
 import { useState } from "react";
 
-const mockTransactions = [
-  { id: "TXN-001", source: "Internal Ledger", counterparty: "Goldman Sachs", amount: "$1,250,000.00", date: "2025-02-06", status: "matched" },
-  { id: "TXN-002", source: "SWIFT MT940", counterparty: "JP Morgan", amount: "$892,450.00", date: "2025-02-06", status: "matched" },
-  { id: "TXN-003", source: "Internal Ledger", counterparty: "Citadel Securities", amount: "$45,200.00", date: "2025-02-05", status: "exception" },
-  { id: "TXN-004", source: "DTC Settlement", counterparty: "Morgan Stanley", amount: "$3,100,000.00", date: "2025-02-05", status: "matched" },
-  { id: "TXN-005", source: "SWIFT MT940", counterparty: "BlackRock", amount: "$567,800.00", date: "2025-02-05", status: "pending" },
-  { id: "TXN-006", source: "Internal Ledger", counterparty: "Vanguard", amount: "$2,340,000.00", date: "2025-02-04", status: "matched" },
-  { id: "TXN-007", source: "FedWire", counterparty: "State Street", amount: "$128,900.00", date: "2025-02-04", status: "exception" },
-  { id: "TXN-008", source: "Internal Ledger", counterparty: "Fidelity", amount: "$4,500,000.00", date: "2025-02-04", status: "matched" },
-];
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 
 const statusColors = {
   matched: { bg: "#e8f5e9", color: "#2e7d32", label: "Matched" },
@@ -21,35 +12,111 @@ const statusColors = {
 
 export default function ReconciliationPage() {
   const [activeTab, setActiveTab] = useState("all");
+  const [running, setRunning] = useState(false);
+  const [aiResults, setAiResults] = useState(null);
+  const [recommendations, setRecommendations] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [input, setInput] = useState("[]");
+  const [inputError, setInputError] = useState("");
 
-  const filtered = activeTab === "all"
-    ? mockTransactions
-    : mockTransactions.filter((t) => t.status === activeTab);
+  async function runReconciliation() {
+    setRunning(true);
+    try {
+      if (!transactions.length) {
+        throw new Error("Load at least one transaction to run reconciliation.");
+      }
+      const res = await fetch(`${API}/api/reconciliation/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactions }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setAiResults(data.results || []);
+      setRecommendations(data.recommendations || []);
+      setInputError("");
+    } catch (err) {
+      console.error("Reconciliation failed:", err);
+      setInputError(err.message);
+    } finally {
+      setRunning(false);
+    }
+  }
 
-  const matchedCount = mockTransactions.filter((t) => t.status === "matched").length;
-  const exceptionCount = mockTransactions.filter((t) => t.status === "exception").length;
-  const pendingCount = mockTransactions.filter((t) => t.status === "pending").length;
+  function loadTransactions() {
+    try {
+      const parsed = JSON.parse(input);
+      if (!Array.isArray(parsed)) {
+        throw new Error("Input must be a JSON array.");
+      }
+      setTransactions(parsed);
+      setAiResults(null);
+      setRecommendations([]);
+      setInputError("");
+    } catch (err) {
+      setInputError(err.message);
+    }
+  }
+
+  function getStatus(txnId) {
+    if (!aiResults) return "pending";
+    const r = aiResults.find((r) => r.id === txnId);
+    return r?.status || "pending";
+  }
+
+  function getNotes(txnId) {
+    if (!aiResults) return null;
+    const r = aiResults.find((r) => r.id === txnId);
+    return r?.notes || null;
+  }
+
+  const rows = transactions.map((t) => ({ ...t, status: getStatus(t.id) }));
+  const filtered = activeTab === "all" ? rows : rows.filter((t) => t.status === activeTab);
+  const matchedCount = rows.filter((t) => t.status === "matched").length;
+  const exceptionCount = rows.filter((t) => t.status === "exception").length;
+  const pendingCount = rows.filter((t) => t.status === "pending").length;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold" style={{ color: "var(--foreground)" }}>Reconciliation</h1>
-          <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
-            AI-powered transaction matching and exception resolution
-          </p>
+          <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>AI-powered transaction matching and exception resolution</p>
         </div>
-        <button
-          className="rounded-sm px-4 py-2 text-sm font-medium text-white transition-colors"
-          style={{ background: "var(--accent)" }}
-          onMouseEnter={(e) => e.target.style.background = "var(--accent-hover)"}
-          onMouseLeave={(e) => e.target.style.background = "var(--accent)"}
-        >
-          Run Reconciliation
+        <button onClick={runReconciliation} disabled={running || transactions.length === 0}
+          className="flex items-center gap-2 rounded-sm px-4 py-2 text-sm font-medium text-white transition-colors disabled:opacity-50"
+          style={{ background: "var(--accent)" }}>
+          {running && <div className="h-3 w-3 animate-spin rounded-full border border-white/30 border-t-white" />}
+          {running ? "Analyzing..." : "Run Reconciliation"}
         </button>
       </div>
 
-      {/* Summary Cards */}
+      <div className="rounded border p-5 space-y-3" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>Transactions Input</p>
+            <p className="text-xs" style={{ color: "var(--muted)" }}>Paste a JSON array of transactions.</p>
+          </div>
+          <button
+            onClick={loadTransactions}
+            className="rounded-sm px-3 py-1.5 text-xs font-medium"
+            style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
+          >
+            Load Data
+          </button>
+        </div>
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          rows={6}
+          className="w-full rounded border p-3 text-xs font-mono"
+          style={{ background: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
+          placeholder='[{"id":"TXN-001","source":"Ledger","counterparty":"ABC","amount":"1000","date":"2026-02-07","type":"trade"}]'
+        />
+        {inputError && <p className="text-xs" style={{ color: "#b54a4a" }}>{inputError}</p>}
+        <p className="text-xs" style={{ color: "var(--muted)" }}>{transactions.length} transaction(s) loaded.</p>
+      </div>
+
       <div className="grid grid-cols-3 gap-4">
         <div className="rounded border p-5" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
           <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>Matched</p>
@@ -65,61 +132,58 @@ export default function ReconciliationPage() {
         </div>
       </div>
 
-      {/* Table */}
+      {recommendations.length > 0 && (
+        <div className="rounded border p-5 space-y-2" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+          <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--accent)" }}>AI Recommendations</p>
+          {recommendations.map((rec, i) => (
+            <p key={i} className="text-[13px]" style={{ color: "var(--foreground)" }}>{rec}</p>
+          ))}
+        </div>
+      )}
+
       <div className="rounded border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
         <div className="flex items-center gap-1 border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
           {["all", "matched", "exception", "pending"].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
+            <button key={tab} onClick={() => setActiveTab(tab)}
               className="rounded-sm px-3 py-1.5 text-xs font-medium capitalize transition-colors"
-              style={{
-                background: activeTab === tab ? "var(--background)" : "transparent",
-                color: activeTab === tab ? "var(--accent)" : "var(--muted)",
-              }}
-            >
+              style={{ background: activeTab === tab ? "var(--background)" : "transparent", color: activeTab === tab ? "var(--accent)" : "var(--muted)" }}>
               {tab}
             </button>
           ))}
         </div>
-
-        <table className="w-full">
-          <thead>
-            <tr className="border-b" style={{ borderColor: "var(--border)" }}>
-              {["Transaction ID", "Source", "Counterparty", "Amount", "Date", "Status"].map((h) => (
-                <th
-                  key={h}
-                  className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider"
-                  style={{ color: "var(--muted)" }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y" style={{ borderColor: "var(--border)" }}>
-            {filtered.map((txn) => (
-              <tr key={txn.id} className="transition-colors" style={{ cursor: "pointer" }}
-                onMouseEnter={(e) => e.currentTarget.style.background = "var(--background)"}
-                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-              >
-                <td className="px-5 py-3 text-[13px] font-medium" style={{ color: "var(--foreground)" }}>{txn.id}</td>
-                <td className="px-5 py-3 text-[13px]" style={{ color: "var(--muted)" }}>{txn.source}</td>
-                <td className="px-5 py-3 text-[13px]" style={{ color: "var(--foreground)" }}>{txn.counterparty}</td>
-                <td className="px-5 py-3 text-[13px] font-medium tabular-nums" style={{ color: "var(--foreground)" }}>{txn.amount}</td>
-                <td className="px-5 py-3 text-[13px] tabular-nums" style={{ color: "var(--muted)" }}>{txn.date}</td>
-                <td className="px-5 py-3">
-                  <span
-                    className="rounded-sm px-2 py-0.5 text-[11px] font-medium"
-                    style={{ background: statusColors[txn.status].bg, color: statusColors[txn.status].color }}
-                  >
-                    {statusColors[txn.status].label}
-                  </span>
-                </td>
+        {rows.length === 0 ? (
+          <div className="px-5 py-8 text-center">
+            <p className="text-sm" style={{ color: "var(--muted)" }}>No transactions loaded.</p>
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr className="border-b" style={{ borderColor: "var(--border)" }}>
+                {["ID", "Source", "Counterparty", "Amount", "Date", "Status", "Notes"].map((h) => (
+                  <th key={h} className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>{h}</th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y" style={{ borderColor: "var(--border)" }}>
+              {filtered.map((txn, i) => (
+                <tr key={txn.id || i}>
+                  <td className="px-5 py-3 text-[13px] font-medium" style={{ color: "var(--foreground)" }}>{txn.id || "—"}</td>
+                  <td className="px-5 py-3 text-[13px]" style={{ color: "var(--muted)" }}>{txn.source || "—"}</td>
+                  <td className="px-5 py-3 text-[13px]" style={{ color: "var(--foreground)" }}>{txn.counterparty || "—"}</td>
+                  <td className="px-5 py-3 text-[13px] font-medium tabular-nums" style={{ color: "var(--foreground)" }}>{txn.amount || "—"}</td>
+                  <td className="px-5 py-3 text-[13px] tabular-nums" style={{ color: "var(--muted)" }}>{txn.date || "—"}</td>
+                  <td className="px-5 py-3">
+                    <span className="rounded-sm px-2 py-0.5 text-[11px] font-medium"
+                      style={{ background: statusColors[txn.status].bg, color: statusColors[txn.status].color }}>
+                      {statusColors[txn.status].label}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-[11px] max-w-[200px]" style={{ color: "var(--muted)" }}>{getNotes(txn.id) || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

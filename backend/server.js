@@ -7,7 +7,8 @@ const app = express();
 
 // Middleware
 app.use(cors({ origin: process.env.FRONTEND_URL || "http://localhost:3000" }));
-app.use(express.json());
+// Increase payload limit for document uploads
+app.use(express.json({ limit: "10mb" }));
 
 // MongoDB connection
 mongoose
@@ -15,8 +16,6 @@ mongoose
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
-// Increase payload limit for document uploads
-app.use(express.json({ limit: "10mb" }));
 
 // Routes
 const userRoutes = require("./routes/users");
