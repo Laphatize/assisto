@@ -1,2 +1,2 @@
-"dedalus-labs" 
-"python-dotenv" 
+dedalus-labs 
+python-dotenv 
