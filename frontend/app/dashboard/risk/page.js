@@ -65,7 +65,6 @@ export default function RiskPage() {
       if (!res.ok) throw new Error(data.error);
       setPortfolio(data.portfolio || []);
       setScenarios(data.scenarios || []);
-      setDirty(false);
     } catch (err) {}
   }
 
