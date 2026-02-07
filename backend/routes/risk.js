@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { dedalus, openai, hasDedalus, hasOpenAI } = require("../lib/openai");
+const { openai, hasOpenAI } = require("../lib/openai");
 const RiskDataset = require("../models/RiskDataset");
 const RiskRun = require("../models/RiskRun");
 const Report = require("../models/Report");
@@ -41,21 +41,16 @@ router.post("/analyze", async (req, res) => {
   try {
     const { portfolio, scenarios } = req.body;
 
-    if (!hasDedalus && !hasOpenAI) {
-      return res.status(500).json({ error: "DEDALUS_API_KEY or OPENAI_API_KEY not set" });
+    if (!hasOpenAI) {
+      return res.status(500).json({ error: "OPENAI_API_KEY not set" });
     }
 
-    const primary = hasDedalus ? dedalus : openai;
-    const secondary = hasDedalus && hasOpenAI ? openai : null;
-    const primaryModel = hasDedalus ? "openai/gpt-4o-mini" : "gpt-4o-mini";
-
-    const callModel = async (client, model) =>
-      client.chat.completions.create({
-        model,
-        messages: [
-          {
-            role: "system",
-            content: `You are a financial risk assessment AI. Analyze the provided portfolio and run stress tests.
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `You are a financial risk assessment AI. Analyze the provided portfolio and run stress tests.
 Evaluate:
 - Value at Risk (VaR) at 95% confidence
 - Expected Shortfall (CVaR)
@@ -70,32 +65,23 @@ Return a JSON object with:
 - "stress_tests": array of objects with "scenario", "impact" (dollar string), "severity" (high/medium/low), "detail"
 - "recommendations": array of risk mitigation suggestions
 Return ONLY valid JSON, no markdown.`,
-          },
-          {
-            role: "user",
-            content: `Analyze this portfolio:\n${JSON.stringify(portfolio || [])}\n\nStress scenarios:\n${JSON.stringify(scenarios || [])}`,
-          },
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.1,
-      });
-
-    let response;
-    try {
-      response = await callModel(primary, primaryModel);
-    } catch (err) {
-      if (err?.status === 401 && secondary) {
-        response = await callModel(secondary, "gpt-4o-mini");
-      } else {
-        throw err;
-      }
-    }
+        },
+        {
+          role: "user",
+          content: `Analyze this portfolio:\n${JSON.stringify(portfolio || [])}\n\nStress scenarios:\n${JSON.stringify(scenarios || [])}`,
+        },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.1,
+    });
 
     const parsed = JSON.parse(response.choices[0].message.content);
+
     const dataset = await getOrCreateDataset();
     dataset.portfolio = portfolio || [];
     dataset.scenarios = scenarios || [];
     await dataset.save();
+
     const run = await RiskRun.create({
       datasetId: dataset._id,
       portfolio: portfolio || [],

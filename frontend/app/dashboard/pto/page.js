@@ -15,6 +15,7 @@ export default function PTOManagement() {
   const [analysis, setAnalysis] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ type: "vacation", startDate: "", endDate: "", reason: "" });
   const [submitting, setSubmitting] = useState(false);
@@ -90,14 +91,20 @@ export default function PTOManagement() {
 
   async function syncCalls() {
     setSyncing(true);
+    setSyncResult(null);
     try {
       const res = await fetch(`${API}/api/pto/sync-calls`, { method: "POST" });
       const data = await res.json();
-      if (res.ok && data.synced > 0) {
+      if (res.ok) {
+        setSyncResult(data);
         loadRequests();
         loadStats();
+      } else {
+        setSyncResult({ error: data.error || "Sync failed", detail: data.detail });
       }
-    } catch {} finally {
+    } catch (err) {
+      setSyncResult({ error: err.message });
+    } finally {
       setSyncing(false);
     }
   }
@@ -165,6 +172,25 @@ export default function PTOManagement() {
           </div>
         ))}
       </div>
+
+      {/* Sync Result */}
+      {syncResult && (
+        <div
+          className="rounded border px-5 py-3 flex items-center justify-between"
+          style={{
+            background: syncResult.error ? "var(--error-bg)" : "#f0fdf4",
+            borderColor: syncResult.error ? "#fecaca" : "#bbf7d0",
+            color: syncResult.error ? "var(--error-text)" : "#166534",
+          }}
+        >
+          <p className="text-sm">
+            {syncResult.error
+              ? `Sync error: ${syncResult.error}${syncResult.detail ? ` — ${syncResult.detail}` : ""}`
+              : `Synced ${syncResult.synced} new request${syncResult.synced !== 1 ? "s" : ""} from ${syncResult.total_calls} call${syncResult.total_calls !== 1 ? "s" : ""}${syncResult.skipped ? ` (skipped: ${syncResult.skipped.already} already synced, ${syncResult.skipped.notEnded} in-progress, ${syncResult.skipped.noAnalysis} no analysis, ${syncResult.skipped.noData} missing data)` : ""}`}
+          </p>
+          <button onClick={() => setSyncResult(null)} className="text-xs font-medium opacity-60 hover:opacity-100">Dismiss</button>
+        </div>
+      )}
 
       {/* AI Analysis */}
       {analysis && (

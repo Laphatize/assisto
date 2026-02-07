@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { dedalus, openai, hasDedalus, hasOpenAI } = require("../lib/openai");
+const { openai, hasOpenAI } = require("../lib/openai");
 const Document = require("../models/Document");
 const ReconciliationRun = require("../models/ReconciliationRun");
 const ReconciliationDataset = require("../models/ReconciliationDataset");
@@ -144,14 +144,11 @@ router.post("/chat", async (req, res) => {
     const { message, history } = req.body;
     if (!message) return res.status(400).json({ error: "message required" });
 
-    if (!hasDedalus && !hasOpenAI) {
-      return res.status(500).json({ error: "DEDALUS_API_KEY or OPENAI_API_KEY not set" });
+    if (!hasOpenAI) {
+      return res.status(500).json({ error: "OPENAI_API_KEY not set" });
     }
 
     const { contextString } = await gatherContext();
-
-    const chatClient = dedalus || openai;
-    const chatModel = hasDedalus ? "openai/gpt-4o-mini" : "gpt-4o-mini";
 
     const messages = [
       {
@@ -168,8 +165,8 @@ ${contextString}`,
       { role: "user", content: message },
     ];
 
-    const response = await chatClient.chat.completions.create({
-      model: chatModel,
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
       messages,
       temperature: 0.3,
     });

@@ -1,8 +1,9 @@
 const express = require("express");
-const { VapiClient } = require("@vapi-ai/server-sdk");
 const router = express.Router();
 const PTORequest = require("../models/PTORequest");
-const { dedalus, openai, hasDedalus, hasOpenAI } = require("../lib/openai");
+const { openai, hasOpenAI } = require("../lib/openai");
+
+const VAPI_BASE = "https://api.vapi.ai";
 
 // GET /api/pto — list all PTO requests
 router.get("/", async (_req, res) => {
@@ -96,7 +97,7 @@ router.delete("/:id", async (req, res) => {
 // POST /api/pto/analyze — AI analysis of PTO patterns
 router.post("/analyze", async (req, res) => {
   try {
-    if (!hasDedalus && !hasOpenAI) {
+    if (!hasOpenAI) {
       return res.status(500).json({ error: "No AI API key configured" });
     }
 
@@ -109,11 +110,8 @@ router.post("/analyze", async (req, res) => {
       `${r.employeeName} | ${r.type} | ${r.startDate?.toISOString?.()?.split("T")[0] || r.startDate} to ${r.endDate?.toISOString?.()?.split("T")[0] || r.endDate} | ${r.days} days | ${r.status}${r.reason ? ` | Reason: ${r.reason}` : ""}`
     ).join("\n");
 
-    const chatClient = dedalus || openai;
-    const chatModel = hasDedalus ? "openai/gpt-4o-mini" : "gpt-4o-mini";
-
-    const response = await chatClient.chat.completions.create({
-      model: chatModel,
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
@@ -141,13 +139,24 @@ router.post("/sync-calls", async (req, res) => {
       return res.status(500).json({ error: "VAPI_API_KEY not set" });
     }
 
-    const vapi = new VapiClient({ token: process.env.VAPI_API_KEY });
+    // Build query params for GET /call
+    const params = new URLSearchParams({ limit: "50" });
+    if (process.env.VAPI_ASSISTANT_ID) {
+      params.set("assistantId", process.env.VAPI_ASSISTANT_ID);
+    }
 
-    // Fetch recent calls
-    const calls = await vapi.calls.list({
-      assistantId: process.env.VAPI_ASSISTANT_ID || undefined,
-      limit: 50,
+    const callsRes = await fetch(`${VAPI_BASE}/call?${params}`, {
+      headers: { Authorization: `Bearer ${process.env.VAPI_API_KEY}` },
     });
+
+    if (!callsRes.ok) {
+      const errText = await callsRes.text();
+      console.error("Vapi list calls failed:", callsRes.status, errText);
+      return res.status(502).json({ error: "Vapi API error", status: callsRes.status, detail: errText });
+    }
+
+    const calls = await callsRes.json();
+    console.log(`Vapi returned ${calls.length} calls`);
 
     // Get all callIds we've already processed
     const existingCallIds = new Set(
@@ -157,43 +166,107 @@ router.post("/sync-calls", async (req, res) => {
 
     const validTypes = ["vacation", "sick", "personal", "bereavement", "other"];
     let created = 0;
+    let skipped = { already: 0, notEnded: 0, noData: 0, noAnalysis: 0 };
 
     for (const call of calls) {
-      // Skip already processed or still in-progress calls
-      if (!call.id || existingCallIds.has(call.id)) continue;
-      if (call.status !== "ended") continue;
+      if (!call.id || existingCallIds.has(call.id)) { skipped.already++; continue; }
+      if (call.status !== "ended") { skipped.notEnded++; continue; }
 
-      const structuredData = call.analysis?.structuredData || {};
-      if (!structuredData.employee_name || !structuredData.start_date || !structuredData.end_date) continue;
+      // Fetch full call details (list endpoint doesn't include structured data)
+      const fullCallRes = await fetch(`${VAPI_BASE}/call/${call.id}`, {
+        headers: { Authorization: `Bearer ${process.env.VAPI_API_KEY}` },
+      });
+      if (!fullCallRes.ok) {
+        console.log(`Call ${call.id}: failed to fetch details (${fullCallRes.status})`);
+        skipped.noAnalysis++;
+        continue;
+      }
+      const fullCall = await fullCallRes.json();
 
-      const start = new Date(structuredData.start_date);
-      const end = new Date(structuredData.end_date);
+      // Structured outputs live at artifact.structuredOutputs[outputId].result
+      const outputs = fullCall.artifact?.structuredOutputs;
+      console.log(`Call ${call.id}: artifact.structuredOutputs =`, JSON.stringify(outputs));
+
+      if (!outputs || typeof outputs !== "object") {
+        console.log(`Call ${call.id}: no artifact.structuredOutputs — skipping`);
+        skipped.noAnalysis++;
+        continue;
+      }
+
+      // Find the PTO result from structured outputs
+      let structuredData = null;
+      for (const outputId of Object.keys(outputs)) {
+        const entry = outputs[outputId];
+        if (entry?.result && typeof entry.result === "object") {
+          if (entry.name === "pto_requested" || !structuredData) {
+            structuredData = entry.result;
+          }
+        }
+      }
+
+      if (!structuredData) {
+        console.log(`Call ${call.id}: no valid structured result found:`, JSON.stringify(outputs));
+        skipped.noAnalysis++;
+        continue;
+      }
+
+      console.log(`Call ${call.id}: resolved structuredData =`, JSON.stringify(structuredData));
+
+      // Map Vapi structured output fields (name, dateStart, dateEnd, category, reason)
+      const empName = structuredData.name || structuredData.employee_name;
+      const startStr = structuredData.dateStart || structuredData.start_date;
+      const endStr = structuredData.dateEnd || structuredData.end_date;
+
+      if (!empName || !startStr || !endStr) {
+        console.log(`Call ${call.id}: missing required fields — name=${empName} start=${startStr} end=${endStr}`);
+        skipped.noData++;
+        continue;
+      }
+
+      const start = new Date(startStr);
+      const end = new Date(endStr);
+      if (isNaN(start) || isNaN(end)) {
+        console.log(`Call ${call.id}: invalid dates — start=${startStr} end=${endStr}`);
+        skipped.noData++;
+        continue;
+      }
+
       const days = structuredData.total_days || Math.ceil(Math.abs(end - start) / (1000 * 60 * 60 * 24)) + 1;
-      const ptoType = structuredData.pto_type || "other";
-      const transcript = call.analysis?.summary || call.transcript || "";
+      const ptoType = (structuredData.category || structuredData.pto_type || "other").toLowerCase();
+
+      // Transcript from full call
+      let transcript = fullCall.analysis?.summary || "";
+      if (!transcript && Array.isArray(fullCall.transcript)) {
+        transcript = fullCall.transcript
+          .map((t) => `${t.role}: ${t.message}`)
+          .join("\n");
+      } else if (!transcript && typeof fullCall.transcript === "string") {
+        transcript = fullCall.transcript;
+      }
 
       await PTORequest.create({
-        employeeName: structuredData.employee_name,
-        employeeEmail: structuredData.employee_email || "",
-        employeePhone: call.customer?.number || structuredData.employee_phone || "",
+        employeeName: empName,
+        employeeEmail: structuredData.email || structuredData.employee_email || "",
+        employeePhone: fullCall.customer?.number || structuredData.phone || "",
         source: "phone",
         callId: call.id,
-        transcript: typeof transcript === "string" ? transcript : JSON.stringify(transcript),
+        transcript,
         type: validTypes.includes(ptoType) ? ptoType : "other",
         startDate: start,
         endDate: end,
         days,
-        reason: structuredData.reason || "",
+        reason: structuredData.reason === "null" ? "" : (structuredData.reason || ""),
       });
 
       created++;
-      console.log(`Vapi PTO request created for ${structuredData.employee_name} (call ${call.id})`);
+      console.log(`PTO request created for ${empName} (call ${call.id})`);
     }
 
-    res.json({ synced: created, total_calls: calls.length });
+    console.log("Sync complete:", { created, skipped });
+    res.json({ synced: created, total_calls: calls.length, skipped });
   } catch (error) {
     console.error("Vapi sync error:", error);
-    res.status(500).json({ error: "Failed to sync Vapi calls" });
+    res.status(500).json({ error: "Failed to sync Vapi calls", detail: error.message });
   }
 });
 
