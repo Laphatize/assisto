@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 
@@ -18,6 +18,12 @@ export default function ReconciliationPage() {
   const [transactions, setTransactions] = useState([]);
   const [input, setInput] = useState("[]");
   const [inputError, setInputError] = useState("");
+  const [runs, setRuns] = useState([]);
+
+  useEffect(() => {
+    reloadDataset();
+    reloadRuns();
+  }, []);
 
   async function runReconciliation() {
     setRunning(true);
@@ -35,6 +41,7 @@ export default function ReconciliationPage() {
       setAiResults(data.results || []);
       setRecommendations(data.recommendations || []);
       setInputError("");
+      reloadRuns();
     } catch (err) {
       console.error("Reconciliation failed:", err);
       setInputError(err.message);
@@ -55,6 +62,47 @@ export default function ReconciliationPage() {
       setInputError("");
     } catch (err) {
       setInputError(err.message);
+    }
+  }
+
+  async function saveDataset() {
+    try {
+      const parsed = JSON.parse(input);
+      if (!Array.isArray(parsed)) throw new Error("Input must be a JSON array.");
+      const res = await fetch(`${API}/api/reconciliation/dataset`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactions: parsed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setTransactions(data.transactions || []);
+      setInput(JSON.stringify(data.transactions || [], null, 2));
+      setInputError("");
+    } catch (err) {
+      setInputError(err.message);
+    }
+  }
+
+  async function reloadDataset() {
+    try {
+      const res = await fetch(`${API}/api/reconciliation/dataset`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setTransactions(data.transactions || []);
+      setInput(JSON.stringify(data.transactions || [], null, 2));
+    } catch (err) {
+      setInputError(err.message);
+    }
+  }
+
+  async function reloadRuns() {
+    try {
+      const res = await fetch(`${API}/api/reconciliation/runs`);
+      const data = await res.json();
+      if (res.ok) setRuns(data);
+    } catch {
+      // ignore
     }
   }
 
@@ -97,13 +145,29 @@ export default function ReconciliationPage() {
             <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>Transactions Input</p>
             <p className="text-xs" style={{ color: "var(--muted)" }}>Paste a JSON array of transactions.</p>
           </div>
-          <button
-            onClick={loadTransactions}
-            className="rounded-sm px-3 py-1.5 text-xs font-medium"
-            style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
-          >
-            Load Data
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadTransactions}
+              className="rounded-sm px-3 py-1.5 text-xs font-medium"
+              style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
+            >
+              Load Local
+            </button>
+            <button
+              onClick={saveDataset}
+              className="rounded-sm px-3 py-1.5 text-xs font-medium"
+              style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
+            >
+              Save to DB
+            </button>
+            <button
+              onClick={reloadDataset}
+              className="rounded-sm px-3 py-1.5 text-xs font-medium"
+              style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
+            >
+              Reload
+            </button>
+          </div>
         </div>
         <textarea
           value={input}
@@ -140,6 +204,37 @@ export default function ReconciliationPage() {
           ))}
         </div>
       )}
+
+      <div className="rounded border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+        <div className="border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
+          <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Run History</h2>
+        </div>
+        {runs.length === 0 ? (
+          <div className="px-5 py-6 text-center">
+            <p className="text-sm" style={{ color: "var(--muted)" }}>No runs yet.</p>
+          </div>
+        ) : (
+          <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+            {runs.slice(0, 5).map((run) => (
+              <div key={run._id} className="flex items-center justify-between px-5 py-3">
+                <div>
+                  <p className="text-[13px] font-medium" style={{ color: "var(--foreground)" }}>
+                    {run.status === "success" ? "Success" : "Error"}
+                  </p>
+                  <p className="text-xs" style={{ color: "var(--muted)" }}>
+                    {new Date(run.createdAt).toLocaleString()}
+                  </p>
+                </div>
+                {run.summary && (
+                  <div className="text-xs" style={{ color: "var(--muted)" }}>
+                    {run.summary.matched}/{run.summary.total} matched
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="rounded border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
         <div className="flex items-center gap-1 border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>

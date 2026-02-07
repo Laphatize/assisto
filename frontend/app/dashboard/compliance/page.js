@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 
@@ -20,6 +20,12 @@ export default function CompliancePage() {
   const [entitiesInput, setEntitiesInput] = useState("[]");
   const [transactionsInput, setTransactionsInput] = useState("[]");
   const [inputError, setInputError] = useState("");
+  const [runs, setRuns] = useState([]);
+
+  useEffect(() => {
+    reloadDataset();
+    reloadRuns();
+  }, []);
 
   async function runScan() {
     setScanning(true);
@@ -38,6 +44,7 @@ export default function CompliancePage() {
       setScores(data.regulatory_scores || []);
       setSummary(data.summary || "");
       setInputError("");
+      reloadRuns();
     } catch (err) {
       console.error("Compliance scan failed:", err);
       setInputError(err.message);
@@ -64,6 +71,54 @@ export default function CompliancePage() {
     }
   }
 
+  async function saveDataset() {
+    try {
+      const parsedEntities = JSON.parse(entitiesInput);
+      const parsedTransactions = JSON.parse(transactionsInput);
+      if (!Array.isArray(parsedEntities) || !Array.isArray(parsedTransactions)) {
+        throw new Error("Inputs must be JSON arrays.");
+      }
+      const res = await fetch(`${API}/api/compliance/dataset`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entities: parsedEntities, transactions: parsedTransactions }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setEntities(data.entities || []);
+      setTransactions(data.transactions || []);
+      setEntitiesInput(JSON.stringify(data.entities || [], null, 2));
+      setTransactionsInput(JSON.stringify(data.transactions || [], null, 2));
+      setInputError("");
+    } catch (err) {
+      setInputError(err.message);
+    }
+  }
+
+  async function reloadDataset() {
+    try {
+      const res = await fetch(`${API}/api/compliance/dataset`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setEntities(data.entities || []);
+      setTransactions(data.transactions || []);
+      setEntitiesInput(JSON.stringify(data.entities || [], null, 2));
+      setTransactionsInput(JSON.stringify(data.transactions || [], null, 2));
+    } catch (err) {
+      setInputError(err.message);
+    }
+  }
+
+  async function reloadRuns() {
+    try {
+      const res = await fetch(`${API}/api/compliance/runs`);
+      const data = await res.json();
+      if (res.ok) setRuns(data);
+    } catch {
+      // ignore
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -85,13 +140,29 @@ export default function CompliancePage() {
             <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>Input Data</p>
             <p className="text-xs" style={{ color: "var(--muted)" }}>Paste JSON arrays for entities and transactions.</p>
           </div>
-          <button
-            onClick={loadInputs}
-            className="rounded-sm px-3 py-1.5 text-xs font-medium"
-            style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
-          >
-            Load Data
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadInputs}
+              className="rounded-sm px-3 py-1.5 text-xs font-medium"
+              style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
+            >
+              Load Local
+            </button>
+            <button
+              onClick={saveDataset}
+              className="rounded-sm px-3 py-1.5 text-xs font-medium"
+              style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
+            >
+              Save to DB
+            </button>
+            <button
+              onClick={reloadDataset}
+              className="rounded-sm px-3 py-1.5 text-xs font-medium"
+              style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
+            >
+              Reload
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <textarea
@@ -123,6 +194,37 @@ export default function CompliancePage() {
           <p className="text-[13px]" style={{ color: "var(--foreground)" }}>{summary}</p>
         </div>
       )}
+
+      <div className="rounded border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+        <div className="border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
+          <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Run History</h2>
+        </div>
+        {runs.length === 0 ? (
+          <div className="px-5 py-6 text-center">
+            <p className="text-sm" style={{ color: "var(--muted)" }}>No runs yet.</p>
+          </div>
+        ) : (
+          <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+            {runs.slice(0, 5).map((run) => (
+              <div key={run._id} className="flex items-center justify-between px-5 py-3">
+                <div>
+                  <p className="text-[13px] font-medium" style={{ color: "var(--foreground)" }}>
+                    {run.status === "success" ? "Success" : "Error"}
+                  </p>
+                  <p className="text-xs" style={{ color: "var(--muted)" }}>
+                    {new Date(run.createdAt).toLocaleString()}
+                  </p>
+                </div>
+                {run.alerts && (
+                  <div className="text-xs" style={{ color: "var(--muted)" }}>
+                    {run.alerts.length} alerts
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="grid grid-cols-3 gap-6">
         <div className="col-span-2">

@@ -1,6 +1,38 @@
 const express = require("express");
 const router = express.Router();
 const openai = require("../lib/openai");
+const ReconciliationDataset = require("../models/ReconciliationDataset");
+const ReconciliationRun = require("../models/ReconciliationRun");
+
+async function getOrCreateDataset() {
+  let dataset = await ReconciliationDataset.findOne();
+  if (!dataset) dataset = await ReconciliationDataset.create({ transactions: [] });
+  return dataset;
+}
+
+// GET /api/reconciliation/dataset
+router.get("/dataset", async (_req, res) => {
+  const dataset = await getOrCreateDataset();
+  res.json(dataset);
+});
+
+// PUT /api/reconciliation/dataset
+router.put("/dataset", async (req, res) => {
+  const { transactions } = req.body;
+  if (!Array.isArray(transactions)) {
+    return res.status(400).json({ error: "transactions array required" });
+  }
+  const dataset = await getOrCreateDataset();
+  dataset.transactions = transactions;
+  await dataset.save();
+  res.json(dataset);
+});
+
+// GET /api/reconciliation/runs
+router.get("/runs", async (_req, res) => {
+  const runs = await ReconciliationRun.find().sort({ createdAt: -1 }).lean();
+  res.json(runs);
+});
 
 // POST /api/reconciliation/analyze
 router.post("/analyze", async (req, res) => {
@@ -50,9 +82,26 @@ Return ONLY valid JSON, no markdown.`,
       if (!match) throw parseError;
       parsed = JSON.parse(match[0]);
     }
-    res.json(parsed);
+    const dataset = await getOrCreateDataset();
+    dataset.transactions = transactions;
+    await dataset.save();
+    const run = await ReconciliationRun.create({
+      datasetId: dataset._id,
+      transactions,
+      results: parsed.results || [],
+      summary: parsed.summary || null,
+      recommendations: parsed.recommendations || [],
+      status: "success",
+    });
+
+    res.json({ ...parsed, runId: run._id });
   } catch (error) {
     console.error("Reconciliation error:", error);
+    await ReconciliationRun.create({
+      transactions: req.body?.transactions || [],
+      status: "error",
+      error: error.message,
+    });
     res.status(500).json({ error: "Failed to run reconciliation" });
   }
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 
@@ -18,6 +18,12 @@ export default function RiskPage() {
   const [portfolioInput, setPortfolioInput] = useState("[]");
   const [scenariosInput, setScenariosInput] = useState("[]");
   const [inputError, setInputError] = useState("");
+  const [runs, setRuns] = useState([]);
+
+  useEffect(() => {
+    reloadDataset();
+    reloadRuns();
+  }, []);
 
   async function runAnalysis() {
     setRunning(true);
@@ -37,6 +43,7 @@ export default function RiskPage() {
       setStressTests(data.stress_tests || []);
       setRecommendations(data.recommendations || []);
       setInputError("");
+      reloadRuns();
     } catch (err) {
       console.error("Risk analysis failed:", err);
       setInputError(err.message);
@@ -61,6 +68,54 @@ export default function RiskPage() {
       setInputError("");
     } catch (err) {
       setInputError(err.message);
+    }
+  }
+
+  async function saveDataset() {
+    try {
+      const parsedPortfolio = JSON.parse(portfolioInput);
+      const parsedScenarios = JSON.parse(scenariosInput);
+      if (!Array.isArray(parsedPortfolio) || !Array.isArray(parsedScenarios)) {
+        throw new Error("Inputs must be JSON arrays.");
+      }
+      const res = await fetch(`${API}/api/risk/dataset`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ portfolio: parsedPortfolio, scenarios: parsedScenarios }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setPortfolio(data.portfolio || []);
+      setScenarios(data.scenarios || []);
+      setPortfolioInput(JSON.stringify(data.portfolio || [], null, 2));
+      setScenariosInput(JSON.stringify(data.scenarios || [], null, 2));
+      setInputError("");
+    } catch (err) {
+      setInputError(err.message);
+    }
+  }
+
+  async function reloadDataset() {
+    try {
+      const res = await fetch(`${API}/api/risk/dataset`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setPortfolio(data.portfolio || []);
+      setScenarios(data.scenarios || []);
+      setPortfolioInput(JSON.stringify(data.portfolio || [], null, 2));
+      setScenariosInput(JSON.stringify(data.scenarios || [], null, 2));
+    } catch (err) {
+      setInputError(err.message);
+    }
+  }
+
+  async function reloadRuns() {
+    try {
+      const res = await fetch(`${API}/api/risk/runs`);
+      const data = await res.json();
+      if (res.ok) setRuns(data);
+    } catch {
+      // ignore
     }
   }
 
@@ -101,13 +156,29 @@ export default function RiskPage() {
             <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--muted)" }}>Input Data</p>
             <p className="text-xs" style={{ color: "var(--muted)" }}>Paste JSON arrays for portfolio and scenarios.</p>
           </div>
-          <button
-            onClick={loadInputs}
-            className="rounded-sm px-3 py-1.5 text-xs font-medium"
-            style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
-          >
-            Load Data
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadInputs}
+              className="rounded-sm px-3 py-1.5 text-xs font-medium"
+              style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
+            >
+              Load Local
+            </button>
+            <button
+              onClick={saveDataset}
+              className="rounded-sm px-3 py-1.5 text-xs font-medium"
+              style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
+            >
+              Save to DB
+            </button>
+            <button
+              onClick={reloadDataset}
+              className="rounded-sm px-3 py-1.5 text-xs font-medium"
+              style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
+            >
+              Reload
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <textarea
@@ -141,6 +212,37 @@ export default function RiskPage() {
           ))}
         </div>
       )}
+
+      <div className="rounded border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
+        <div className="border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
+          <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>Run History</h2>
+        </div>
+        {runs.length === 0 ? (
+          <div className="px-5 py-6 text-center">
+            <p className="text-sm" style={{ color: "var(--muted)" }}>No runs yet.</p>
+          </div>
+        ) : (
+          <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+            {runs.slice(0, 5).map((run) => (
+              <div key={run._id} className="flex items-center justify-between px-5 py-3">
+                <div>
+                  <p className="text-[13px] font-medium" style={{ color: "var(--foreground)" }}>
+                    {run.status === "success" ? "Success" : "Error"}
+                  </p>
+                  <p className="text-xs" style={{ color: "var(--muted)" }}>
+                    {new Date(run.createdAt).toLocaleString()}
+                  </p>
+                </div>
+                {run.metrics && (
+                  <div className="text-xs" style={{ color: "var(--muted)" }}>
+                    VaR: {run.metrics.var_95 || "—"}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="grid grid-cols-4 gap-4">
         {displayMetrics.map((m) => (
