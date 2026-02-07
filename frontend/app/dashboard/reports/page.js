@@ -40,7 +40,7 @@ export default function ReportsPage() {
                     </div>
                   </div>
                   <button
-                    className="ml-4 rounded-sm px-3 py-1.5 text-xs font-medium transition-colors"
+                    className="ml-4 rounded-sm px-3 py-1.5 text-xs font-medium transition-colors btn-click"
                     style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
                   >
                     Generate

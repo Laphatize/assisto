@@ -38,3 +38,29 @@ body {
   color: var(--foreground) !important;
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Button click animation: subtle scale + translate for tactile feedback */
+button {
+  transition: transform 140ms cubic-bezier(.4,0,.2,1), box-shadow 140ms cubic-bezier(.4,0,.2,1), filter 140ms cubic-bezier(.4,0,.2,1), background-color 140ms cubic-bezier(.4,0,.2,1), color 140ms cubic-bezier(.4,0,.2,1);
+  will-change: transform, filter;
+}
+
+button:hover {
+  /* slight brighten on hover */
+  filter: brightness(1.02);
+}
+
+button:active {
+  transform: translateY(1px) scale(0.985);
+  /* stronger press visual — darken colors slightly */
+  filter: brightness(0.86);
+}
+
+/* Utility class if explicit usage is preferred */
+.btn-click {
+  transition: transform 140ms cubic-bezier(.4,0,.2,1), box-shadow 140ms cubic-bezier(.4,0,.2,1), filter 140ms cubic-bezier(.4,0,.2,1);
+}
+.btn-click:active {
+  transform: translateY(1px) scale(0.985);
+  filter: brightness(0.86);
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5001";
 
@@ -21,6 +21,16 @@ export default function CompliancePage() {
   const [transactionsInput, setTransactionsInput] = useState("[]");
   const [inputError, setInputError] = useState("");
   const [runs, setRuns] = useState([]);
+  const [alertRuleFilters, setAlertRuleFilters] = useState([
+    "AML",
+    "KYC",
+    "OFAC",
+    "SOX",
+    "RegW",
+    "Patterns",
+  ]);
+  const [alertSeverityFilters, setAlertSeverityFilters] = useState(["high", "medium", "low"]);
+  const [alertSearchQuery, setAlertSearchQuery] = useState("");
   const [selectedRules, setSelectedRules] = useState(["AML", "KYC", "OFAC", "SOX", "RegW", "Patterns"]);
 
   const complianceRules = [
@@ -179,14 +189,14 @@ export default function CompliancePage() {
           <div className="flex items-center gap-2">
             <button
               onClick={loadInputs}
-              className="rounded-sm px-3 py-1.5 text-xs font-medium"
+              className="rounded-sm px-3 py-1.5 text-xs font-medium btn-click"
               style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
             >
               Load Local
             </button>
             <button
               onClick={saveDataset}
-              className="rounded-sm px-3 py-1.5 text-xs font-medium"
+              className="rounded-sm px-3 py-1.5 text-xs font-medium btn-click"
               style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
             >
               Save to DB
@@ -201,22 +211,28 @@ export default function CompliancePage() {
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <textarea
-            value={entitiesInput}
-            onChange={(e) => setEntitiesInput(e.target.value)}
-            rows={6}
-            className="w-full rounded border p-3 text-xs font-mono"
-            style={{ background: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
-            placeholder='[{"name":"Counterparty A","type":"Counterparty","kyc_expiry":"2026-03-01","jurisdiction":"US"}]'
-          />
-          <textarea
-            value={transactionsInput}
-            onChange={(e) => setTransactionsInput(e.target.value)}
-            rows={6}
-            className="w-full rounded border p-3 text-xs font-mono"
-            style={{ background: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
-            placeholder='[{"id":"TXN-001","entity":"Counterparty A","amount":"1000","type":"Wire","date":"2026-02-07"}]'
-          />
+          <div>
+            <p className="text-[11px] font-semibold mb-2" style={{ color: "var(--muted)" }}>Entities</p>
+            <textarea
+              value={entitiesInput}
+              onChange={(e) => setEntitiesInput(e.target.value)}
+              rows={6}
+              className="w-full rounded border p-3 text-xs font-mono"
+              style={{ background: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
+              placeholder='[{"name":"Counterparty A","type":"Counterparty","kyc_expiry":"2026-03-01","jurisdiction":"US"}]'
+            />
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold mb-2" style={{ color: "var(--muted)" }}>Transactions</p>
+            <textarea
+              value={transactionsInput}
+              onChange={(e) => setTransactionsInput(e.target.value)}
+              rows={6}
+              className="w-full rounded border p-3 text-xs font-mono"
+              style={{ background: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
+              placeholder='[{"id":"TXN-001","entity":"Counterparty A","amount":"1000","type":"Wire","date":"2026-02-07"}]'
+            />
+          </div>
         </div>
         {inputError && <p className="text-xs" style={{ color: "#b54a4a" }}>{inputError}</p>}
         <p className="text-xs" style={{ color: "var(--muted)" }}>
@@ -266,40 +282,109 @@ export default function CompliancePage() {
         <div className="col-span-2">
           <div className="rounded border" style={{ background: "var(--card)", borderColor: "var(--border)" }}>
             <div className="border-b px-5 py-4" style={{ borderColor: "var(--border)" }}>
-              <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
-                {alerts.length > 0 ? `Active Alerts (${alerts.length})` : "Active Alerts"}
-              </h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold" style={{ color: "var(--foreground)" }}>
+                  {alerts.length > 0 ? `Active Alerts (${alerts.length})` : "Active Alerts"}
+                </h2>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="Search alerts"
+                    value={alertSearchQuery}
+                    onChange={(e) => setAlertSearchQuery(e.target.value)}
+                    className="text-xs rounded-sm px-2 py-1"
+                    style={{ border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)" }}
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="px-5 py-3 flex items-center gap-4" style={{ borderBottom: "1px solid var(--border)" }}>
+              <div className="flex items-center gap-3">
+                <p className="text-xs font-semibold" style={{ color: "var(--muted)" }}>Rules:</p>
+                {complianceRules.map((r) => (
+                  <label key={r.id} className="flex items-center gap-1 text-xs" style={{ color: "var(--foreground)" }}>
+                    <input
+                      type="checkbox"
+                      checked={alertRuleFilters.includes(r.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) setAlertRuleFilters([...alertRuleFilters, r.id]);
+                        else setAlertRuleFilters(alertRuleFilters.filter((x) => x !== r.id));
+                      }}
+                      className="w-3 h-3"
+                    />
+                    <span>{r.id}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="flex items-center gap-3">
+                <p className="text-xs font-semibold" style={{ color: "var(--muted)" }}>Severity:</p>
+                {["high", "medium", "low"].map((s) => (
+                  <label key={s} className="flex items-center gap-1 text-xs" style={{ color: "var(--foreground)" }}>
+                    <input
+                      type="checkbox"
+                      checked={alertSeverityFilters.includes(s)}
+                      onChange={(e) => {
+                        if (e.target.checked) setAlertSeverityFilters([...alertSeverityFilters, s]);
+                        else setAlertSeverityFilters(alertSeverityFilters.filter((x) => x !== s));
+                      }}
+                      className="w-3 h-3"
+                    />
+                    <span className="capitalize">{s}</span>
+                  </label>
+                ))}
+              </div>
             </div>
             {alerts.length === 0 ? (
               <div className="px-5 py-8 text-center">
                 <p className="text-sm" style={{ color: "var(--muted)" }}>{scanning ? "Scanning..." : "Run a compliance scan to detect issues."}</p>
               </div>
             ) : (
-              <div className="divide-y" style={{ borderColor: "var(--border)" }}>
-                {alerts.map((alert, i) => (
-                  <div key={alert.id || i} className="px-5 py-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="h-2 w-2 rounded-sm" style={{ background: severityStyles[alert.severity]?.color || "var(--muted)" }} />
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[13px] font-medium" style={{ color: "var(--foreground)" }}>{alert.rule}</span>
-                            <span className="rounded-sm px-2 py-0.5 text-[10px] font-medium capitalize"
-                              style={{ background: severityStyles[alert.severity]?.bg, color: severityStyles[alert.severity]?.color }}>
-                              {alert.severity}
-                            </span>
+              (() => {
+                const filtered = alerts.filter((alert) => {
+                  if (!alert) return false;
+                  if (alert.rule && !alertRuleFilters.includes(alert.rule)) return false;
+                  if (alert.severity && !alertSeverityFilters.includes(alert.severity)) return false;
+                  if (alertSearchQuery) {
+                    const q = alertSearchQuery.toLowerCase();
+                    const hay = `${alert.rule || ""} ${alert.entity || ""} ${alert.detail || ""} ${alert.id || ""}`.toLowerCase();
+                    if (!hay.includes(q)) return false;
+                  }
+                  return true;
+                });
+
+                return (
+                  <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+                    {filtered.map((alert, i) => (
+                      <div key={alert.id || i} className="px-5 py-4">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className="h-2 w-2 rounded-sm" style={{ background: severityStyles[alert.severity]?.color || "var(--muted)" }} />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[13px] font-medium" style={{ color: "var(--foreground)" }}>{alert.rule}</span>
+                                <span className="rounded-sm px-2 py-0.5 text-[10px] font-medium capitalize"
+                                  style={{ background: severityStyles[alert.severity]?.bg, color: severityStyles[alert.severity]?.color }}>
+                                  {alert.severity}
+                                </span>
+                              </div>
+                              <p className="text-xs" style={{ color: "var(--muted)" }}>{alert.entity}</p>
+                            </div>
                           </div>
-                          <p className="text-xs" style={{ color: "var(--muted)" }}>{alert.entity}</p>
                         </div>
+                        <p className="mt-2 pl-[18px] text-xs leading-relaxed" style={{ color: "var(--muted)" }}>{alert.detail}</p>
+                        {alert.recommended_action && (
+                          <p className="mt-1 pl-[18px] text-xs" style={{ color: "var(--accent)" }}>Action: {alert.recommended_action}</p>
+                        )}
                       </div>
-                    </div>
-                    <p className="mt-2 pl-[18px] text-xs leading-relaxed" style={{ color: "var(--muted)" }}>{alert.detail}</p>
-                    {alert.recommended_action && (
-                      <p className="mt-1 pl-[18px] text-xs" style={{ color: "var(--accent)" }}>Action: {alert.recommended_action}</p>
+                    ))}
+                    {filtered.length === 0 && (
+                      <div className="px-5 py-6 text-center">
+                        <p className="text-sm" style={{ color: "var(--muted)" }}>No alerts match the current filters.</p>
+                      </div>
                     )}
                   </div>
-                ))}
-              </div>
+                );
+              })()
             )}
           </div>
         </div>

@@ -159,14 +159,14 @@ export default function RiskPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={loadInputs}
-              className="rounded-sm px-3 py-1.5 text-xs font-medium"
+              className="rounded-sm px-3 py-1.5 text-xs font-medium btn-click"
               style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
             >
               Load Local
             </button>
             <button
               onClick={saveDataset}
-              className="rounded-sm px-3 py-1.5 text-xs font-medium"
+              className="rounded-sm px-3 py-1.5 text-xs font-medium btn-click"
               style={{ background: "var(--background)", color: "var(--accent)", border: "1px solid var(--border)" }}
             >
               Save to DB
@@ -181,22 +181,28 @@ export default function RiskPage() {
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <textarea
-            value={portfolioInput}
-            onChange={(e) => setPortfolioInput(e.target.value)}
-            rows={6}
-            className="w-full rounded border p-3 text-xs font-mono"
-            style={{ background: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
-            placeholder='[{"asset":"US Equities","exposure":"1000000","percentage":40}]'
-          />
-          <textarea
-            value={scenariosInput}
-            onChange={(e) => setScenariosInput(e.target.value)}
-            rows={6}
-            className="w-full rounded border p-3 text-xs font-mono"
-            style={{ background: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
-            placeholder='["Equity Market -10%","Rates +100bps"]'
-          />
+          <div>
+            <p className="text-[11px] font-semibold mb-2" style={{ color: "var(--muted)" }}>Portfolio</p>
+            <textarea
+              value={portfolioInput}
+              onChange={(e) => setPortfolioInput(e.target.value)}
+              rows={6}
+              className="w-full rounded border p-3 text-xs font-mono"
+              style={{ background: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
+              placeholder='[{"asset":"US Equities","exposure":"1000000","percentage":40}]'
+            />
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold mb-2" style={{ color: "var(--muted)" }}>Scenarios</p>
+            <textarea
+              value={scenariosInput}
+              onChange={(e) => setScenariosInput(e.target.value)}
+              rows={6}
+              className="w-full rounded border p-3 text-xs font-mono"
+              style={{ background: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
+              placeholder='["Equity Market -10%","Rates +100bps"]'
+            />
+          </div>
         </div>
         {inputError && <p className="text-xs" style={{ color: "#b54a4a" }}>{inputError}</p>}
         <p className="text-xs" style={{ color: "var(--muted)" }}>
